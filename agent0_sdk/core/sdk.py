@@ -29,6 +29,11 @@ from .ipfs_client import IPFSClient
 from .feedback_manager import FeedbackManager
 from .transaction_handle import TransactionHandle
 from .subgraph_client import SubgraphClient
+from .telemetry import (
+    TelemetryClient,
+    DEFAULT_TELEMETRY_ENDPOINT,
+    categorize_error,
+)
 
 
 class SDK:
@@ -52,12 +57,16 @@ class SDK:
         pinataJwt: Optional[str] = None,
         # Subgraph configuration
         subgraphOverrides: Optional[Dict[ChainId, str]] = None,  # Override subgraph URLs per chain
+        subgraphUrl: Optional[str] = None,  # Single default subgraph URL for current chain (e.g. for tests)
+        # Telemetry
+        api_key: Optional[str] = None,
+        telemetry_endpoint: Optional[str] = None,
     ):
         """Initialize the SDK."""
         self.chainId = chainId
         self.rpcUrl = rpcUrl
         self.signer = signer
-        
+
         # Initialize Web3 client (with or without signer for read-only operations)
         if signer:
             if isinstance(signer, str):
@@ -67,33 +76,28 @@ class SDK:
         else:
             # Read-only mode - no signer
             self.web3_client = Web3Client(rpcUrl)
-        
+
         # Registry addresses
         self.registry_overrides = registryOverrides or {}
         self._registries = self._resolve_registries()
-        
+
         # Initialize contract instances
         self._identity_registry = None
         self._reputation_registry = None
         self._validation_registry = None
-        
+
         # Resolve subgraph URL (with fallback chain)
-        self._subgraph_urls = {}
+        self._subgraph_urls: Dict[ChainId, str] = {}
         if subgraphOverrides:
             self._subgraph_urls.update(subgraphOverrides)
-        
+        if subgraphUrl:
+            self._subgraph_urls[chainId] = subgraphUrl
+
         # Get subgraph URL for current chain
-        resolved_subgraph_url = None
-        
-        # Priority 1: Chain-specific override
-        if chainId in self._subgraph_urls:
-            resolved_subgraph_url = self._subgraph_urls[chainId]
-        # Priority 2: Default for chain
-        elif chainId in DEFAULT_SUBGRAPH_URLS:
-            resolved_subgraph_url = DEFAULT_SUBGRAPH_URLS[chainId]
-        else:
-            # No subgraph available - subgraph_client will be None
-            resolved_subgraph_url = None
+        resolved_subgraph_url = (
+            self._subgraph_urls.get(chainId)
+            or DEFAULT_SUBGRAPH_URLS.get(chainId)
+        )
         
         # Initialize subgraph client if URL available
         if resolved_subgraph_url:
@@ -127,6 +131,20 @@ class SDK:
             identity_registry=identity_registry,
             indexer=self.indexer  # Pass indexer for unified search interface
         )
+
+        # Telemetry (fire-and-forget when api_key is set)
+        if api_key and api_key.strip():
+            self._telemetry = TelemetryClient(
+                api_key=api_key.strip(),
+                endpoint=telemetry_endpoint or DEFAULT_TELEMETRY_ENDPOINT,
+            )
+        else:
+            self._telemetry = None
+
+    def _emit_telemetry_event(self, event: Dict[str, Any]) -> None:
+        """Emit a single telemetry event. No-op if telemetry is disabled."""
+        if self._telemetry:
+            self._telemetry.emit([event])
 
     def _resolve_registries(self) -> Dict[str, Address]:
         """Resolve registry addresses for current chain."""
@@ -287,46 +305,66 @@ class SDK:
         In that case we return a partially-hydrated Agent with an empty registration file so the
         caller can resume publishing and set the URI later.
         """
-        # Convert agentId to string if it's an integer
-        agentId = str(agentId)
-        
-        # Parse agent ID
-        if ":" in agentId:
-            chain_id, token_id = agentId.split(":", 1)
-            if int(chain_id) != self.chainId:
-                raise ValueError(f"Agent {agentId} is not on current chain {self.chainId}")
-        else:
-            token_id = agentId
-        
-        # Get token URI from contract
+        start_ms = int(time.time() * 1000)
+        agent_id_str = str(agentId)
         try:
-            agent_uri = self.web3_client.call_contract(
-                self.identity_registry, "tokenURI", int(token_id)  # tokenURI is ERC-721 standard, but represents agentURI
-            )
-        except Exception as e:
-            raise ValueError(f"Failed to load agent {agentId}: {e}")
-        
-        # Load registration file (or fall back to a minimal file if agent URI is missing)
-        registration_file = self._load_registration_file(agent_uri)
-        registration_file.agentId = agentId
-        registration_file.agentURI = agent_uri if agent_uri else None
+            # Convert agentId to string if it's an integer
+            agentId = agent_id_str
 
-        if not agent_uri or not str(agent_uri).strip():
-            logger.warning(
-                f"Agent {agentId} has no agentURI set on-chain yet. "
-                "Returning a partial agent; update info and call registerIPFS() to publish and set URI."
-            )
-        
-        # Store registry address for proper JSON generation
-        registry_address = self._registries.get("IDENTITY")
-        if registry_address:
-            registration_file._registry_address = registry_address
-            registration_file._chain_id = self.chainId
-        
-        # Hydrate on-chain data
-        self._hydrate_agent_data(registration_file, int(token_id))
-        
-        return Agent(sdk=self, registration_file=registration_file)
+            # Parse agent ID
+            if ":" in agentId:
+                chain_id, token_id = agentId.split(":", 1)
+                if int(chain_id) != self.chainId:
+                    raise ValueError(f"Agent {agentId} is not on current chain {self.chainId}")
+            else:
+                token_id = agentId
+
+            # Get token URI from contract
+            try:
+                agent_uri = self.web3_client.call_contract(
+                    self.identity_registry, "tokenURI", int(token_id)  # tokenURI is ERC-721 standard, but represents agentURI
+                )
+            except Exception as e:
+                raise ValueError(f"Failed to load agent {agentId}: {e}")
+
+            # Load registration file (or fall back to a minimal file if agent URI is missing)
+            registration_file = self._load_registration_file(agent_uri)
+            registration_file.agentId = agentId
+            registration_file.agentURI = agent_uri if agent_uri else None
+
+            if not agent_uri or not str(agent_uri).strip():
+                logger.warning(
+                    f"Agent {agentId} has no agentURI set on-chain yet. "
+                    "Returning a partial agent; update info and call registerIPFS() to publish and set URI."
+                )
+
+            # Store registry address for proper JSON generation
+            registry_address = self._registries.get("IDENTITY")
+            if registry_address:
+                registration_file._registry_address = registry_address
+                registration_file._chain_id = self.chainId
+
+            # Hydrate on-chain data
+            self._hydrate_agent_data(registration_file, int(token_id))
+
+            self._emit_telemetry_event({
+                "eventType": "agent.loaded",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {"chainId": self.chainId, "agentId": agent_id_str},
+            })
+            return Agent(sdk=self, registration_file=registration_file)
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "agent.loaded",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {"chainId": self.chainId, "agentId": agent_id_str},
+            })
+            raise
 
     def _load_registration_file(self, uri: str) -> RegistrationFile:
         """Load registration file from URI.
@@ -456,7 +494,36 @@ class SDK:
 
     def getAgent(self, agentId: AgentId) -> AgentSummary:
         """Get agent summary from index."""
-        return self.indexer.get_agent(agentId)
+        start_ms = int(time.time() * 1000)
+        agent_id_str = str(agentId)
+        try:
+            result = self.indexer.get_agent(agentId)
+            self._emit_telemetry_event({
+                "eventType": "agent.fetched",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "found": result is not None,
+                },
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "agent.fetched",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "found": False,
+                },
+            })
+            raise
 
     def searchAgents(
         self,
@@ -492,10 +559,39 @@ class SDK:
             options = SearchOptions(**options)
 
         # Do not force a default sort here; the indexer chooses keyword-aware defaults.
-        out = self.indexer.search_agents(filters, options)
-        if isinstance(out, dict):
-            return out.get("items") or []
-        return out or []
+        start_ms = int(time.time() * 1000)
+        try:
+            out = self.indexer.search_agents(filters, options)
+            items = out.get("items") if isinstance(out, dict) else out
+            items = items or []
+            results = [
+                getattr(a, "agentId", a.get("agentId") if isinstance(a, dict) else None)
+                for a in (items[:100])
+            ]
+            payload = {
+                "chainId": self.chainId,
+                "results": results,
+            }
+            self._emit_telemetry_event({
+                "eventType": "search.query",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": payload,
+            })
+            if isinstance(out, dict):
+                return out.get("items") or []
+            return out or []
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "search.query",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {"chainId": self.chainId, "results": []},
+            })
+            raise
 
     # Feedback methods are defined later in this class (single authoritative API).
     
@@ -583,19 +679,59 @@ class SDK:
                 "(agentId/agents/reviewers/tags/capabilities/skills/tasks/names/minValue/maxValue)."
             )
 
-        return self.feedback_manager.searchFeedback(
-            agentId=agentId,
-            agents=agents,
-            clientAddresses=reviewers,
-            tags=tags,
-            capabilities=capabilities,
-            skills=skills,
-            tasks=tasks,
-            names=names,
-            minValue=minValue,
-            maxValue=maxValue,
-            include_revoked=include_revoked,
-        )
+        start_ms = int(time.time() * 1000)
+        agent_count = len(agents) if agents else (1 if agentId else 0)
+        try:
+            result = self.feedback_manager.searchFeedback(
+                agentId=agentId,
+                agents=agents,
+                clientAddresses=reviewers,
+                tags=tags,
+                capabilities=capabilities,
+                skills=skills,
+                tasks=tasks,
+                names=names,
+                minValue=minValue,
+                maxValue=maxValue,
+                include_revoked=include_revoked,
+            )
+            self._emit_telemetry_event({
+                "eventType": "feedback.searched",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agentId,
+                    "agentCount": agent_count,
+                    "tags": tags,
+                    "reviewers": reviewers,
+                    "capabilities": capabilities,
+                    "skills": skills,
+                    "tasks": tasks,
+                    "names": names,
+                    "minValue": minValue,
+                    "maxValue": maxValue,
+                    "includeRevoked": include_revoked,
+                    "resultCount": len(result),
+                    "isZeroResults": len(result) == 0,
+                },
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "feedback.searched",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agentId,
+                    "agentCount": agent_count,
+                },
+            })
+            raise
     
     def revokeFeedback(
         self,
@@ -622,9 +758,33 @@ class SDK:
         agentId: "AgentId",
     ) -> Dict[str, Any]:
         """Get reputation summary for an agent."""
-        return self.feedback_manager.getReputationSummary(
-            agentId
-        )
+        start_ms = int(time.time() * 1000)
+        agent_id_str = str(agentId)
+        try:
+            result = self.feedback_manager.getReputationSummary(agentId)
+            self._emit_telemetry_event({
+                "eventType": "reputation.summary.fetched",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "count": result.get("count", 0),
+                    "averageValue": result.get("averageValue", 0.0),
+                },
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "reputation.summary.fetched",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {"chainId": self.chainId, "agentId": agent_id_str},
+            })
+            raise
     
     def transferAgent(
         self,
