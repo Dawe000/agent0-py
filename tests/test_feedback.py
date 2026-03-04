@@ -5,7 +5,7 @@ Submits feedback from a client to an existing agent and verifies data integrity.
 Flow:
 1. Load existing agent by ID
 2. Client submits multiple feedback entries
-3. Verify feedback data consistency (value, tags, capability, skill)
+3. Verify feedback data consistency (value, tags, mcpTool, a2aSkills)
 4. Wait for blockchain finalization
 5. Verify feedback can be retrieved (if SDK supports it)
 
@@ -60,36 +60,26 @@ def generateFeedbackData(index: int):
         ["communication", "enterprise"],
     ]
     
-    capabilities = [
-        "tools",
-        "tools",
-        "tools",
-        "tools",
-        "tools"
-    ]
-
-    capabilities = [
+    mcp_tools = [
         "data_analysis",
         "code_generation",
         "natural_language_understanding",
         "problem_solving",
-        "communication"
+        "communication",
     ]
-    
     skills = [
         "python",
         "javascript",
         "machine_learning",
         "web_development",
-        "cloud_computing"
+        "cloud_computing",
     ]
-    
     return {
-        'value': random.choice(scores),
-        'tags': random.choice(tags_sets),
-        'capability': random.choice(capabilities),
-        'skill': random.choice(skills),
-        'context': 'enterprise'
+        "value": random.choice(scores),
+        "tags": random.choice(tags_sets),
+        "mcpTool": random.choice(mcp_tools),
+        "a2aSkills": [random.choice(skills)],
+        "a2aContextId": "enterprise",
     }
 
 
@@ -168,9 +158,9 @@ def main():
         
         # Prepare off-chain feedback file (optional rich data)
         feedbackFile = clientSdk.prepareFeedbackFile({
-            "capability": feedbackData.get("capability"),
-            "skill": feedbackData.get("skill"),
-            "context": feedbackData.get("context"),
+            "mcpTool": feedbackData.get("mcpTool"),
+            "a2aSkills": feedbackData.get("a2aSkills"),
+            "a2aContextId": feedbackData.get("a2aContextId"),
             "text": feedbackData.get("text"),
         })
 
@@ -180,8 +170,8 @@ def main():
         
         print(f"  - Value: {feedbackData['value']}")
         print(f"  - Tags: {feedbackData['tags']}")
-        print(f"  - Capability: {feedbackData['capability']}")
-        print(f"  - Skill: {feedbackData['skill']}")
+        print(f"  - mcpTool: {feedbackData.get('mcpTool')}")
+        print(f"  - a2aSkills: {feedbackData.get('a2aSkills')}")
         
         # Submit feedback
         try:
@@ -270,16 +260,15 @@ def main():
         data = entry['data']
         feedback = entry['feedback']
         
-        # Verify feedback object fields (spec-aligned: mcpTool, a2aSkills; payload may use legacy capability/skill)
-        expected_mcp = data.get('mcpTool') or data.get('capability')
-        expected_skill = (data.get('a2aSkills') or [data.get('skill')] if data.get('skill') else [])
-        if not isinstance(expected_skill, list):
-            expected_skill = [expected_skill] if expected_skill else []
+        # Verify feedback object fields (spec-aligned: mcpTool, a2aSkills)
+        expected_skills = data.get("a2aSkills") or []
+        if not isinstance(expected_skills, list):
+            expected_skills = [expected_skills] if expected_skills else []
         checks = [
-            ('Value', data['value'], feedback.value),
-            ('Tags', data['tags'], feedback.tags),
-            ('MCP/capability', expected_mcp, feedback.mcpTool),
-            ('A2A skill', expected_skill, feedback.a2aSkills),
+            ("Value", data["value"], feedback.value),
+            ("Tags", data["tags"], feedback.tags),
+            ("mcpTool", data.get("mcpTool"), feedback.mcpTool),
+            ("a2aSkills", expected_skills, feedback.a2aSkills or []),
         ]
         
         for field_name, expected, actual in checks:
@@ -326,18 +315,20 @@ def main():
             print(f"    ✅ Retrieved feedback successfully")
             print(f"    - Value: {retrievedFeedback.value}")
             print(f"    - Tags: {retrievedFeedback.tags}")
-            print(f"    - Capability: {retrievedFeedback.capability}")
-            print(f"    - Skill: {retrievedFeedback.skill}")
+            print(f"    - mcpTool: {retrievedFeedback.mcpTool}")
+            print(f"    - a2aSkills: {retrievedFeedback.a2aSkills}")
             print(f"    - Is Revoked: {retrievedFeedback.isRevoked}")
             print(f"    - Has Responses: {len(retrievedFeedback.answers)} response(s)")
             if retrievedFeedback.fileURI:
                 print(f"    - File URI: {retrievedFeedback.fileURI}")
             
-            # Verify retrieved feedback matches original (subgraph tags may be legacy/hashed)
-            expected = entry['data']
-            if retrievedFeedback.value == expected['value'] and \
-               retrievedFeedback.capability == expected['capability'] and \
-               retrievedFeedback.skill == expected['skill']:
+            # Verify retrieved feedback matches original
+            expected = entry["data"]
+            if (
+                retrievedFeedback.value == expected["value"]
+                and retrievedFeedback.mcpTool == expected.get("mcpTool")
+                and (retrievedFeedback.a2aSkills or []) == (expected.get("a2aSkills") or [])
+            ):
                 print(f"    ✅ Retrieved feedback matches original submission")
             else:
                 print(f"    ❌ Retrieved feedback does not match original")
@@ -351,42 +342,45 @@ def main():
     print("\n📍 Step 9: Test searchFeedback (With Filters)")
     print("-" * 60)
     
-    # Test 1: Search by capability
-    print("\n  Test 1: Search feedback by capability")
-    testCapability = feedbackEntries[0]['data']['capability']
-    try:
-        results = agentSdkWithSigner.searchFeedback(
-            agentId=AGENT_ID,
-            capabilities=[testCapability],
-            first=10,
-            skip=0
-        )
-        print(f"    ✅ Found {len(results)} feedback entry/entries with capability '{testCapability}'")
-        if results:
-            for fb in results:
-                print(f"      - Value: {fb.value}, Tags: {fb.tags}")
-    except Exception as e:
-        print(f"    ❌ Failed to search feedback by capability: {e}")
-        allMatch = False
-    
-    # Test 2: Search by skill
-    print("\n  Test 2: Search feedback by skill")
-    testSkill = feedbackEntries[0]['data']['skill']
-    try:
-        results = agentSdkWithSigner.searchFeedback(
-            agentId=AGENT_ID,
-            skills=[testSkill],
-            first=10,
-            skip=0
-        )
-        print(f"    ✅ Found {len(results)} feedback entry/entries with skill '{testSkill}'")
-        if results:
-            for fb in results:
-                print(f"      - Value: {fb.value}, Tags: {fb.tags}")
-    except Exception as e:
-        print(f"    ❌ Failed to search feedback by skill: {e}")
-        allMatch = False
-    
+    # Test 1: Search by mcpTool (filter param still named capabilities)
+    print("\n  Test 1: Search feedback by mcpTool (capabilities filter)")
+    test_mcp_tool = feedbackEntries[0]["data"].get("mcpTool")
+    if test_mcp_tool:
+        try:
+            results = agentSdkWithSigner.searchFeedback(
+                agentId=AGENT_ID,
+                capabilities=[test_mcp_tool],
+                first=10,
+                skip=0,
+            )
+            print(f"    ✅ Found {len(results)} feedback entry/entries with mcpTool '{test_mcp_tool}'")
+            if results:
+                for fb in results:
+                    print(f"      - Value: {fb.value}, Tags: {fb.tags}")
+        except Exception as e:
+            print(f"    ❌ Failed to search feedback by mcpTool: {e}")
+            allMatch = False
+
+    # Test 2: Search by a2aSkills (filter param still named skills)
+    print("\n  Test 2: Search feedback by a2aSkills (skills filter)")
+    test_skills = feedbackEntries[0]["data"].get("a2aSkills") or []
+    test_skill = test_skills[0] if test_skills else None
+    if test_skill:
+        try:
+            results = agentSdkWithSigner.searchFeedback(
+                agentId=AGENT_ID,
+                skills=[test_skill],
+                first=10,
+                skip=0,
+            )
+            print(f"    ✅ Found {len(results)} feedback entry/entries with skill '{test_skill}'")
+            if results:
+                for fb in results:
+                    print(f"      - Value: {fb.value}, Tags: {fb.tags}")
+        except Exception as e:
+            print(f"    ❌ Failed to search feedback by skill: {e}")
+            allMatch = False
+
     # Test 3: Search by tags
     print("\n  Test 3: Search feedback by tags")
     testTags = feedbackEntries[0]['data']['tags']
@@ -400,7 +394,7 @@ def main():
         print(f"    ✅ Found {len(results)} feedback entry/entries with tags {testTags}")
         if results:
             for fb in results:
-                print(f"      - Value: {fb.value}, Capability: {fb.capability}")
+                print(f"      - Value: {fb.value}, mcpTool: {fb.mcpTool}")
     except Exception as e:
         print(f"    ❌ Failed to search feedback by tags: {e}")
         allMatch = False

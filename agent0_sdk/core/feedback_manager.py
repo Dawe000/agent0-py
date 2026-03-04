@@ -233,11 +233,11 @@ class FeedbackManager:
                 return []
             return list(v) if isinstance(v, (list, tuple)) else [v] if v else []
 
-        # Map spec fields; accept legacy keys for backward compat when giving feedback
-        mcp_tool = ff.get("mcpTool") or ff.get("capability")
-        a2a_skills = _list(ff.get("a2aSkills")) or ([ff.get("skill")] if ff.get("skill") else [])
-        a2a_ctx = ff.get("a2aContextId") or (ff.get("context") if isinstance(ff.get("context"), str) else (ff.get("context", {}).get("id") if isinstance(ff.get("context"), dict) else None))
-        a2a_task = ff.get("a2aTaskId") or ff.get("task")
+        # Spec-aligned fields only (no legacy mapping)
+        mcp_tool = ff.get("mcpTool")
+        a2a_skills = _list(ff.get("a2aSkills"))
+        a2a_ctx = ff.get("a2aContextId")
+        a2a_task = ff.get("a2aTaskId")
 
         return TransactionHandle(
             web3_client=self.web3_client,
