@@ -270,12 +270,16 @@ def main():
         data = entry['data']
         feedback = entry['feedback']
         
-        # Verify feedback object fields
+        # Verify feedback object fields (spec-aligned: mcpTool, a2aSkills; payload may use legacy capability/skill)
+        expected_mcp = data.get('mcpTool') or data.get('capability')
+        expected_skill = (data.get('a2aSkills') or [data.get('skill')] if data.get('skill') else [])
+        if not isinstance(expected_skill, list):
+            expected_skill = [expected_skill] if expected_skill else []
         checks = [
             ('Value', data['value'], feedback.value),
             ('Tags', data['tags'], feedback.tags),
-            ('Capability', data['capability'], feedback.capability),
-            ('Skill', data['skill'], feedback.skill),
+            ('MCP/capability', expected_mcp, feedback.mcpTool),
+            ('A2A skill', expected_skill, feedback.a2aSkills),
         ]
         
         for field_name, expected, actual in checks:

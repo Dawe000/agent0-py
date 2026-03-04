@@ -228,6 +228,17 @@ class FeedbackManager:
         feedbackId = Feedback.create_id(agentId, clientAddress, feedbackIndex)
         ff: Dict[str, Any] = feedback_file or {}
 
+        def _list(v: Any) -> List[str]:
+            if v is None:
+                return []
+            return list(v) if isinstance(v, (list, tuple)) else [v] if v else []
+
+        # Map spec fields; accept legacy keys for backward compat when giving feedback
+        mcp_tool = ff.get("mcpTool") or ff.get("capability")
+        a2a_skills = _list(ff.get("a2aSkills")) or ([ff.get("skill")] if ff.get("skill") else [])
+        a2a_ctx = ff.get("a2aContextId") or (ff.get("context") if isinstance(ff.get("context"), str) else (ff.get("context", {}).get("id") if isinstance(ff.get("context"), dict) else None))
+        a2a_task = ff.get("a2aTaskId") or ff.get("task")
+
         return TransactionHandle(
             web3_client=self.web3_client,
             tx_hash=txHash,
@@ -238,16 +249,19 @@ class FeedbackManager:
                 value=decode_feedback_value(value_raw, value_decimals),
                 tags=[tag1, tag2] if tag1 or tag2 else [],
                 text=ff.get("text"),
-                context=ff.get("context"),
                 proofOfPayment=ff.get("proofOfPayment"),
                 fileURI=feedbackUri if feedbackUri else None,
                 endpoint=endpoint_onchain if endpoint_onchain else None,
                 createdAt=int(time.time()),
                 isRevoked=False,
-                capability=ff.get("capability"),
-                name=ff.get("name"),
-                skill=ff.get("skill"),
-                task=ff.get("task"),
+                mcpTool=mcp_tool,
+                mcpPrompt=ff.get("mcpPrompt"),
+                mcpResource=ff.get("mcpResource"),
+                a2aSkills=a2a_skills,
+                a2aContextId=a2a_ctx,
+                a2aTaskId=a2a_task,
+                oasfSkills=_list(ff.get("oasfSkills")),
+                oasfDomains=_list(ff.get("oasfDomains")),
             ),
         )
 
@@ -305,7 +319,7 @@ class FeedbackManager:
             feedback_file = feedback_data.get('feedbackFile') or {}
             if not isinstance(feedback_file, dict):
                 feedback_file = {}
-            
+
             # Map responses
             responses_data = feedback_data.get('responses', [])
             answers = []
@@ -326,30 +340,42 @@ class FeedbackManager:
             if isinstance(tag2, str) and tag2:
                     tags.append(tag2)
             
+            a2a = feedback_file.get('a2aSkills') or []
+            oasf = feedback_file.get('oasfSkills') or []
+            oasf_domains = feedback_file.get('oasfDomains') or []
+            if not isinstance(a2a, list):
+                a2a = [a2a] if a2a else []
+            if not isinstance(oasf, list):
+                oasf = [oasf] if oasf else []
+            if not isinstance(oasf_domains, list):
+                oasf_domains = [oasf_domains] if oasf_domains else []
+
             return Feedback(
-                id=Feedback.create_id(agentId, clientAddress, feedbackIndex),  # create_id now normalizes
+                id=Feedback.create_id(agentId, clientAddress, feedbackIndex),
                 agentId=agentId,
-                reviewer=self.web3_client.normalize_address(clientAddress),  # Also normalize reviewer field
+                reviewer=self.web3_client.normalize_address(clientAddress),
                 value=float(feedback_data.get("value")) if feedback_data.get("value") is not None else None,
                 tags=tags,
                 text=feedback_file.get('text'),
-                capability=feedback_file.get('capability'),
-                context=feedback_file.get('context'),
                 proofOfPayment={
                     'fromAddress': feedback_file.get('proofOfPaymentFromAddress'),
                     'toAddress': feedback_file.get('proofOfPaymentToAddress'),
                     'chainId': feedback_file.get('proofOfPaymentChainId'),
                     'txHash': feedback_file.get('proofOfPaymentTxHash'),
                 } if feedback_file.get('proofOfPaymentFromAddress') else None,
-                fileURI=feedback_data.get('feedbackURI') or feedback_data.get('feedbackUri'),  # Handle both old and new field names
-                # Prefer on-chain endpoint; fall back to off-chain file endpoint if missing
+                fileURI=feedback_data.get('feedbackURI') or feedback_data.get('feedbackUri'),
                 endpoint=feedback_data.get('endpoint') or feedback_file.get('endpoint'),
                 createdAt=feedback_data.get('createdAt', int(time.time())),
                 answers=answers,
                 isRevoked=feedback_data.get('isRevoked', False),
-                name=feedback_file.get('name'),
-                skill=feedback_file.get('skill'),
-                task=feedback_file.get('task'),
+                mcpTool=feedback_file.get('mcpTool'),
+                mcpPrompt=feedback_file.get('mcpPrompt'),
+                mcpResource=feedback_file.get('mcpResource'),
+                a2aSkills=a2a,
+                a2aContextId=feedback_file.get('a2aContextId'),
+                a2aTaskId=feedback_file.get('a2aTaskId'),
+                oasfSkills=oasf,
+                oasfDomains=oasf_domains,
             )
             
         except Exception as e:
@@ -397,14 +423,12 @@ class FeedbackManager:
                 reviewer=normalized_address,
                 value=decode_feedback_value(int(value_raw), int(value_decimals)),
                 tags=tags,
-                text=None,  # Not stored on-chain
-                capability=None,  # Not stored on-chain
-                context=None,  # Not stored on-chain
-                proofOfPayment=None,  # Not stored on-chain
-                fileURI=None,  # Would need to be retrieved separately
-                endpoint=None,  # Not stored on-chain in readFeedback
-                createdAt=int(time.time()),  # Not stored on-chain
-                isRevoked=is_revoked
+                text=None,
+                proofOfPayment=None,
+                fileURI=None,
+                endpoint=None,
+                createdAt=int(time.time()),
+                isRevoked=is_revoked,
             )
             
         except Exception as e:
@@ -525,13 +549,11 @@ class FeedbackManager:
                     value=decode_feedback_value(int(values[i]), int(value_decimals[i])),
                     tags=tags_list,
                     text=None,
-                    capability=None,
                     endpoint=None,
-                    context=None,
                     proofOfPayment=None,
                     fileURI=None,
                     createdAt=int(time.time()),
-                    isRevoked=revoked_statuses[i] if i < len(revoked_statuses) else False
+                    isRevoked=revoked_statuses[i] if i < len(revoked_statuses) else False,
                 )
                 feedbacks.append(feedback)
             
@@ -539,6 +561,79 @@ class FeedbackManager:
             
         except Exception as e:
             raise ValueError(f"Failed to search feedback: {e}")
+    
+    def _subgraph_row_to_feedback(self, fb_data: Dict[str, Any]) -> Feedback:
+        """Convert one subgraph feedback row (dict) to a Feedback model using spec-aligned FeedbackFile fields."""
+        feedback_file = fb_data.get('feedbackFile') or {}
+        if not isinstance(feedback_file, dict):
+            feedback_file = {}
+        responses_data = fb_data.get('responses', [])
+        answers = [
+            {
+                'responder': resp.get('responder'),
+                'responseUri': resp.get('responseUri'),
+                'responseHash': resp.get('responseHash'),
+                'createdAt': resp.get('createdAt')
+            }
+            for resp in responses_data
+        ]
+        tags_list: List[str] = []
+        tag1 = fb_data.get('tag1') or feedback_file.get('tag1')
+        tag2 = fb_data.get('tag2') or feedback_file.get('tag2')
+        if isinstance(tag1, str) and tag1:
+            tags_list.append(tag1)
+        if isinstance(tag2, str) and tag2:
+            tags_list.append(tag2)
+        feedback_id = fb_data.get('id', '')
+        parts = feedback_id.split(':')
+        if len(parts) >= 4:
+            agent_id_str = f"{parts[0]}:{parts[1]}"
+            client_addr = parts[2]
+            feedback_idx = int(parts[3])
+        elif len(parts) >= 2:
+            agent_id_str = f"{parts[0]}:{parts[1]}"
+            client_addr = parts[2] if len(parts) > 2 else ""
+            feedback_idx = int(parts[3]) if len(parts) > 3 else 1
+        else:
+            agent_id_str = feedback_id
+            client_addr = ""
+            feedback_idx = 1
+        a2a = feedback_file.get('a2aSkills') or []
+        oasf = feedback_file.get('oasfSkills') or []
+        oasf_domains = feedback_file.get('oasfDomains') or []
+        if not isinstance(a2a, list):
+            a2a = [a2a] if a2a else []
+        if not isinstance(oasf, list):
+            oasf = [oasf] if oasf else []
+        if not isinstance(oasf_domains, list):
+            oasf_domains = [oasf_domains] if oasf_domains else []
+        return Feedback(
+            id=Feedback.create_id(agent_id_str, client_addr, feedback_idx),
+            agentId=agent_id_str,
+            reviewer=client_addr,
+            value=float(fb_data.get("value")) if fb_data.get("value") is not None else None,
+            tags=tags_list,
+            text=feedback_file.get('text'),
+            proofOfPayment={
+                'fromAddress': feedback_file.get('proofOfPaymentFromAddress'),
+                'toAddress': feedback_file.get('proofOfPaymentToAddress'),
+                'chainId': feedback_file.get('proofOfPaymentChainId'),
+                'txHash': feedback_file.get('proofOfPaymentTxHash'),
+            } if feedback_file.get('proofOfPaymentFromAddress') else None,
+            fileURI=fb_data.get('feedbackURI') or fb_data.get('feedbackUri'),
+            endpoint=fb_data.get('endpoint'),
+            createdAt=fb_data.get('createdAt', int(time.time())),
+            answers=answers,
+            isRevoked=fb_data.get('isRevoked', False),
+            mcpTool=feedback_file.get('mcpTool'),
+            mcpPrompt=feedback_file.get('mcpPrompt'),
+            mcpResource=feedback_file.get('mcpResource'),
+            a2aSkills=a2a,
+            a2aContextId=feedback_file.get('a2aContextId'),
+            a2aTaskId=feedback_file.get('a2aTaskId'),
+            oasfSkills=oasf,
+            oasfDomains=oasf_domains,
+        )
     
     def _search_feedback_subgraph(
         self,
@@ -588,67 +683,7 @@ class FeedbackManager:
             )
 
             for fb_data in feedbacks_data:
-                feedback_file = fb_data.get('feedbackFile') or {}
-                if not isinstance(feedback_file, dict):
-                    feedback_file = {}
-
-                # Map responses
-                responses_data = fb_data.get('responses', [])
-                answers = []
-                for resp in responses_data:
-                    answers.append({
-                        'responder': resp.get('responder'),
-                        'responseUri': resp.get('responseUri'),
-                        'responseHash': resp.get('responseHash'),
-                        'createdAt': resp.get('createdAt')
-                    })
-
-                # Map tags: rely on whatever the subgraph returns (may be legacy bytes/hash-like values)
-                tags_list: List[str] = []
-                tag1 = fb_data.get('tag1') or feedback_file.get('tag1')
-                tag2 = fb_data.get('tag2') or feedback_file.get('tag2')
-                if isinstance(tag1, str) and tag1:
-                    tags_list.append(tag1)
-                if isinstance(tag2, str) and tag2:
-                    tags_list.append(tag2)
-
-                # Parse agentId from feedback ID
-                feedback_id = fb_data['id']
-                parts = feedback_id.split(':')
-                if len(parts) >= 2:
-                    agent_id_str = f"{parts[0]}:{parts[1]}"
-                    client_addr = parts[2] if len(parts) > 2 else ""
-                    feedback_idx = int(parts[3]) if len(parts) > 3 else 1
-                else:
-                    agent_id_str = feedback_id
-                    client_addr = ""
-                    feedback_idx = 1
-
-                feedback = Feedback(
-                    id=Feedback.create_id(agent_id_str, client_addr, feedback_idx),
-                    agentId=agent_id_str,
-                    reviewer=client_addr,
-                    value=float(fb_data.get("value")) if fb_data.get("value") is not None else None,
-                    tags=tags_list,
-                    text=feedback_file.get('text'),
-                    capability=feedback_file.get('capability'),
-                    context=feedback_file.get('context'),
-                    proofOfPayment={
-                        'fromAddress': feedback_file.get('proofOfPaymentFromAddress'),
-                        'toAddress': feedback_file.get('proofOfPaymentToAddress'),
-                        'chainId': feedback_file.get('proofOfPaymentChainId'),
-                        'txHash': feedback_file.get('proofOfPaymentTxHash'),
-                    } if feedback_file.get('proofOfPaymentFromAddress') else None,
-                    fileURI=fb_data.get('feedbackURI') or fb_data.get('feedbackUri'),  # Handle both old and new field names
-                    endpoint=fb_data.get('endpoint'),
-                    createdAt=fb_data.get('createdAt', int(time.time())),
-                    answers=answers,
-                    isRevoked=fb_data.get('isRevoked', False),
-                    name=feedback_file.get('name'),
-                    skill=feedback_file.get('skill'),
-                    task=feedback_file.get('task'),
-                )
-                feedbacks.append(feedback)
+                feedbacks.append(self._subgraph_row_to_feedback(fb_data))
 
             if len(feedbacks_data) < batch:
                 break
@@ -850,23 +885,33 @@ class FeedbackManager:
         groupBy: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Get reputation summary from subgraph."""
-        # Build tags list
         tags = []
         if tag1:
             tags.append(tag1)
         if tag2:
             tags.append(tag2)
-        
-        # Get all feedback for the agent using indexer (which handles multi-chain)
-        # Use searchFeedback with a large limit to get all feedback
-        all_feedback = self.searchFeedback(
-            agentId=agentId,
-            clientAddresses=clientAddresses,
+        params = SearchFeedbackParams(
+            agents=[agentId],
+            reviewers=clientAddresses,
             tags=tags if tags else None,
-            include_revoked=False,
-            first=1000,  # Large limit to get all feedback
-            skip=0
+            includeRevoked=False,
         )
+        all_feedback: List[Feedback] = []
+        batch = 1000
+        skip = 0
+        while True:
+            rows = self.subgraph_client.search_feedback(
+                params=params,
+                first=batch,
+                skip=skip,
+                order_by="createdAt",
+                order_direction="desc",
+            )
+            for fb_data in rows:
+                all_feedback.append(self._subgraph_row_to_feedback(fb_data))
+            if len(rows) < batch:
+                break
+            skip += batch
         
         # Calculate summary statistics
         count = len(all_feedback)
@@ -945,31 +990,27 @@ class FeedbackManager:
                 else:
                     key_parts.append("tags:none")
             elif dimension == "capability":
-                # Group by MCP capability
-                if feedback.capability:
-                    key_parts.append(f"capability:{feedback.capability}")
+                # Group by MCP (tool, prompt, or resource)
+                cap = feedback.mcpTool or feedback.mcpPrompt or feedback.mcpResource
+                if cap:
+                    key_parts.append(f"capability:{cap}")
                 else:
                     key_parts.append("capability:none")
             elif dimension == "skill":
-                # Group by A2A skill
-                if feedback.skill:
-                    key_parts.append(f"skill:{feedback.skill}")
+                # Group by A2A or OASF skill
+                skill = (feedback.a2aSkills[0] if feedback.a2aSkills else None) or (feedback.oasfSkills[0] if feedback.oasfSkills else None)
+                if skill:
+                    key_parts.append(f"skill:{skill}")
                 else:
                     key_parts.append("skill:none")
             elif dimension == "task":
-                # Group by A2A task
-                if feedback.task:
-                    key_parts.append(f"task:{feedback.task}")
+                if feedback.a2aTaskId:
+                    key_parts.append(f"task:{feedback.a2aTaskId}")
                 else:
                     key_parts.append("task:none")
             elif dimension == "endpoint":
-                # Group by endpoint (from context or capability)
-                endpoint = None
-                if feedback.context and "endpoint" in feedback.context:
-                    endpoint = feedback.context["endpoint"]
-                elif feedback.capability:
-                    endpoint = f"mcp:{feedback.capability}"
-                
+                cap = feedback.mcpTool or feedback.mcpPrompt or feedback.mcpResource
+                endpoint = feedback.endpoint or (f"mcp:{cap}" if cap else None)
                 if endpoint:
                     key_parts.append(f"endpoint:{endpoint}")
                 else:

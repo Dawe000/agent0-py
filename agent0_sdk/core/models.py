@@ -204,19 +204,22 @@ class Feedback:
     value: Optional[float]
     tags: List[str] = field(default_factory=list)
     text: Optional[str] = None
-    context: Optional[Dict[str, Any]] = None
     proofOfPayment: Optional[Dict[str, Any]] = None
     fileURI: Optional[URI] = None
     endpoint: Optional[str] = None  # Endpoint URI associated with feedback
     createdAt: Timestamp = field(default_factory=lambda: int(datetime.now().timestamp()))
     answers: List[Dict[str, Any]] = field(default_factory=list)
     isRevoked: bool = False
-    
-    # Off-chain only fields (not stored on blockchain)
-    capability: Optional[str] = None  # MCP capability: "prompts", "resources", "tools", "completions"
-    name: Optional[str] = None  # MCP tool/resource name
-    skill: Optional[str] = None  # A2A skill
-    task: Optional[str] = None  # A2A task
+
+    # Subgraph FeedbackFile fields (spec-aligned); populated when Feedback is built from subgraph
+    mcpTool: Optional[str] = None
+    mcpPrompt: Optional[str] = None
+    mcpResource: Optional[str] = None
+    a2aSkills: List[str] = field(default_factory=list)
+    a2aContextId: Optional[str] = None
+    a2aTaskId: Optional[str] = None
+    oasfSkills: List[str] = field(default_factory=list)
+    oasfDomains: List[str] = field(default_factory=list)
     
     def __post_init__(self):
         """Validate and set ID after initialization."""
