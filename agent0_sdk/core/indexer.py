@@ -1141,11 +1141,20 @@ class AgentIndexer:
         clientAddress: Address,
         feedbackIndex: int,
     ) -> Feedback:
-        """Map subgraph feedback data to Feedback model."""
+        """Map subgraph feedback data to Feedback model using spec-aligned FeedbackFile fields."""
         feedback_file = feedback_data.get('feedbackFile') or {}
         if not isinstance(feedback_file, dict):
             feedback_file = {}
-        
+        a2a = feedback_file.get('a2aSkills') or []
+        oasf = feedback_file.get('oasfSkills') or []
+        oasf_domains = feedback_file.get('oasfDomains') or []
+        if not isinstance(a2a, list):
+            a2a = [a2a] if a2a else []
+        if not isinstance(oasf, list):
+            oasf = [oasf] if oasf else []
+        if not isinstance(oasf_domains, list):
+            oasf_domains = [oasf_domains] if oasf_domains else []
+
         # Map responses
         responses_data = feedback_data.get('responses', [])
         answers = []
@@ -1196,23 +1205,25 @@ class AgentIndexer:
             value=float(feedback_data.get("value")) if feedback_data.get("value") is not None else None,
             tags=tags,
             text=feedback_file.get('text'),
-            capability=feedback_file.get('capability'),
-            context=feedback_file.get('context'),
             proofOfPayment={
                 'fromAddress': feedback_file.get('proofOfPaymentFromAddress'),
                 'toAddress': feedback_file.get('proofOfPaymentToAddress'),
                 'chainId': feedback_file.get('proofOfPaymentChainId'),
                 'txHash': feedback_file.get('proofOfPaymentTxHash'),
             } if feedback_file.get('proofOfPaymentFromAddress') else None,
-            fileURI=feedback_data.get('feedbackURI') or feedback_data.get('feedbackUri'),  # Handle both old and new field names
-            # Prefer on-chain endpoint; fall back to off-chain file endpoint if missing
+            fileURI=feedback_data.get('feedbackURI') or feedback_data.get('feedbackUri'),
             endpoint=feedback_data.get('endpoint') or feedback_file.get('endpoint'),
             createdAt=feedback_data.get('createdAt', int(time.time())),
             answers=answers,
             isRevoked=feedback_data.get('isRevoked', False),
-            name=feedback_file.get('name'),
-            skill=feedback_file.get('skill'),
-            task=feedback_file.get('task'),
+            mcpTool=feedback_file.get('mcpTool'),
+            mcpPrompt=feedback_file.get('mcpPrompt'),
+            mcpResource=feedback_file.get('mcpResource'),
+            a2aSkills=a2a,
+            a2aContextId=feedback_file.get('a2aContextId'),
+            a2aTaskId=feedback_file.get('a2aTaskId'),
+            oasfSkills=oasf,
+            oasfDomains=oasf_domains,
         )
     
     def search_feedback(

@@ -177,7 +177,7 @@ class TestFeedback:
             value=4.5,
             tags=["quality", "speed"],
             text="Great service!",
-            capability="tools"
+            mcpTool="tools",
         )
         
         assert feedback.id == ("1:123", "0x456", 1)
@@ -187,7 +187,7 @@ class TestFeedback:
         assert feedback.value == 4.5
         assert feedback.tags == ["quality", "speed"]
         assert feedback.text == "Great service!"
-        assert feedback.capability == "tools"
+        assert feedback.mcpTool == "tools"
 
 
 class TestSearchFilters:
