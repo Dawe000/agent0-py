@@ -4,8 +4,16 @@
 
 - **FeedbackFile schema aligned with deployed subgraph**: feedback file fields now match the current subgraph `FeedbackFile` entity.
 - **Legacy feedback fields removed**: legacy keys are no longer accepted or mapped by the SDK.
+- **Note (TypeScript parity)**: the TypeScript SDK added an embedded Helia IPFS option (`ipfs: 'helia'`) and updated its Kubo-daemon client. The Python SDK’s `ipfs="node"` backend continues to connect via `ipfshttpclient`.
+- **Fully on-chain registration files (ERC-8004 data URIs)**: the SDK now supports `agentURI`/`tokenURI` as `data:application/json;base64,...` for fully on-chain registration metadata.
 
 ## Changes in 1.6.0 (since 1.5.3)
+
+- **On-chain registration file support (`data:` URI)**
+  - **Read**: `SDK.loadAgent()` now supports `agentURI`/`tokenURI` values like `data:application/json;base64,...` (tolerant of optional params such as `;charset=utf-8`).
+  - **Write**: new `Agent.registerOnChain()` publishes the registration file fully on-chain by encoding it into a `data:` URI and calling `register(...)` / `setAgentURI(...)`.
+  - **Safety**: `registrationDataUriMaxBytes` limits decoded `data:` URI size (default **256 KiB**).
+  - **Backwards compatible**: `registerIPFS()` and `register()` (HTTP/IPFS URIs) are unchanged.
 
 - **Spec-aligned feedback fields only**
   - `Feedback` now includes (when built from subgraph feedback files):
