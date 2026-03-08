@@ -13,6 +13,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+from .data_uri import is_erc8004_json_data_uri, decode_erc8004_json_data_uri
 from .models import (
     AgentId, ChainId, Address, URI, Timestamp, IdemKey,
     EndpointType, TrustModel, Endpoint, RegistrationFile,
@@ -61,6 +62,7 @@ class SDK:
         # Telemetry
         api_key: Optional[str] = None,
         telemetry_endpoint: Optional[str] = None,
+        registrationDataUriMaxBytes: int = 256 * 1024,
     ):
         """Initialize the SDK."""
         self.chainId = chainId
@@ -140,6 +142,9 @@ class SDK:
             )
         else:
             self._telemetry = None
+
+        # Max decoded bytes for ERC-8004 JSON base64 data URIs (on-chain registration files)
+        self.registrationDataUriMaxBytes = int(registrationDataUriMaxBytes) if registrationDataUriMaxBytes else 256 * 1024
 
     def _emit_telemetry_event(self, event: Dict[str, Any]) -> None:
         """Emit a single telemetry event. No-op if telemetry is disabled."""
@@ -373,6 +378,14 @@ class SDK:
         """
         if not uri or not str(uri).strip():
             return RegistrationFile()
+
+        if is_erc8004_json_data_uri(uri):
+            data = decode_erc8004_json_data_uri(uri, max_bytes=self.registrationDataUriMaxBytes)
+            return RegistrationFile.from_dict(data)
+        if uri.startswith("data:"):
+            raise ValueError(
+                "Unsupported data URI. Expected data:application/json;...;base64,... per ERC-8004."
+            )
 
         if uri.startswith("ipfs://"):
             if not self.ipfs_client:

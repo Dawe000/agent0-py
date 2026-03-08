@@ -461,12 +461,16 @@ class SubgraphClient:
                     revokedAt
                     feedbackFile {{
                         id
+                        feedbackId
                         text
-                        capability
-                        name
-                        skill
-                        task
-                        context
+                        mcpTool
+                        mcpPrompt
+                        mcpResource
+                        a2aSkills
+                        a2aContextId
+                        a2aTaskId
+                        oasfSkills
+                        oasfDomains
                         proofOfPaymentFromAddress
                         proofOfPaymentToAddress
                         proofOfPaymentChainId
@@ -616,11 +620,14 @@ class SubgraphClient:
                     id
                     feedbackId
                     text
-                    capability
-                    name
-                    skill
-                    task
-                    context
+                    mcpTool
+                    mcpPrompt
+                    mcpResource
+                    a2aSkills
+                    a2aContextId
+                    a2aTaskId
+                    oasfSkills
+                    oasfDomains
                     proofOfPaymentFromAddress
                     proofOfPaymentToAddress
                     proofOfPaymentChainId
@@ -708,27 +715,8 @@ class SubgraphClient:
         if params.maxValue is not None:
             where_conditions.append(f'value_lte: "{params.maxValue}"')
         
-        # Feedback file filters
-        feedback_file_filters = []
-        
-        if params.capabilities is not None and len(params.capabilities) > 0:
-            capabilities = [f'"{cap}"' for cap in params.capabilities]
-            feedback_file_filters.append(f'capability_in: [{", ".join(capabilities)}]')
-        
-        if params.skills is not None and len(params.skills) > 0:
-            skills = [f'"{skill}"' for skill in params.skills]
-            feedback_file_filters.append(f'skill_in: [{", ".join(skills)}]')
-        
-        if params.tasks is not None and len(params.tasks) > 0:
-            tasks = [f'"{task}"' for task in params.tasks]
-            feedback_file_filters.append(f'task_in: [{", ".join(tasks)}]')
-        
-        if params.names is not None and len(params.names) > 0:
-            names = [f'"{name}"' for name in params.names]
-            feedback_file_filters.append(f'name_in: [{", ".join(names)}]')
-        
-        if feedback_file_filters:
-            where_conditions.append(f'feedbackFile_: {{ {", ".join(feedback_file_filters)} }}')
+        # Subgraph schema does not expose FeedbackFile.capability/skill/task/name; do not add
+        # feedbackFile_ filters for those (match TS SDK behaviour).
         
         # Use tag_filter_condition if tags were provided, otherwise use standard where clause
         if tag_filter_condition:
@@ -766,11 +754,14 @@ class SubgraphClient:
                     id
                     feedbackId
                     text
-                    capability
-                    name
-                    skill
-                    task
-                    context
+                    mcpTool
+                    mcpPrompt
+                    mcpResource
+                    a2aSkills
+                    a2aContextId
+                    a2aTaskId
+                    oasfSkills
+                    oasfDomains
                     proofOfPaymentFromAddress
                     proofOfPaymentToAddress
                     proofOfPaymentChainId
