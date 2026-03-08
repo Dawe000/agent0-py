@@ -631,14 +631,63 @@ class SDK:
         - If feedbackFile is None: submit on-chain only (no upload even if IPFS is configured).
         - If feedbackFile is provided: requires IPFS configured; uploads and commits URI/hash on-chain.
         """
-        return self.feedback_manager.giveFeedback(
-            agentId=agentId,
-            value=value,
-            tag1=tag1,
-            tag2=tag2,
-            endpoint=endpoint,
-            feedbackFile=feedbackFile,
-        )
+        start_ms = int(time.time() * 1000)
+        value_num = int(value) if isinstance(value, (int, float)) else int(str(value), 10)
+        agent_id_str = str(agentId)
+        try:
+            result = self.feedback_manager.giveFeedback(
+                agentId=agentId,
+                value=value,
+                tag1=tag1,
+                tag2=tag2,
+                endpoint=endpoint,
+                feedbackFile=feedbackFile,
+            )
+            payload = {
+                "chainId": self.chainId,
+                "agentId": agent_id_str,
+                "value": value_num,
+                "tag1": tag1,
+                "tag2": tag2,
+                "hasEndpoint": bool(endpoint),
+                "endpoint": endpoint,
+                "hasOffchainFile": feedbackFile is not None,
+                "hasText": bool(feedbackFile.get("text")) if feedbackFile else False,
+                "hasContext": bool(feedbackFile.get("context")) if feedbackFile else False,
+                "hasProofOfPayment": bool(feedbackFile.get("proofOfPayment")) if feedbackFile else False,
+                "mcpTool": feedbackFile.get("mcpTool") if feedbackFile else None,
+                "mcpPrompt": feedbackFile.get("mcpPrompt") if feedbackFile else None,
+                "mcpResource": feedbackFile.get("mcpResource") if feedbackFile else None,
+                "a2aSkills": feedbackFile.get("a2aSkills") if feedbackFile else None,
+                "a2aContextId": feedbackFile.get("a2aContextId") if feedbackFile else None,
+                "a2aTaskId": feedbackFile.get("a2aTaskId") if feedbackFile else None,
+                "oasfSkills": feedbackFile.get("oasfSkills") if feedbackFile else None,
+                "oasfDomains": feedbackFile.get("oasfDomains") if feedbackFile else None,
+            }
+            self._emit_telemetry_event({
+                "eventType": "feedback.given",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": payload,
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "feedback.given",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "value": value_num,
+                    "tag1": tag1,
+                    "tag2": tag2,
+                },
+            })
+            raise
     
     def getFeedback(
         self,
@@ -647,9 +696,39 @@ class SDK:
         feedbackIndex: int,
     ) -> "Feedback":
         """Get feedback (maps 8004 endpoint)."""
-        return self.feedback_manager.getFeedback(
-            agentId, clientAddress, feedbackIndex
-        )
+        start_ms = int(time.time() * 1000)
+        try:
+            result = self.feedback_manager.getFeedback(
+                agentId, clientAddress, feedbackIndex
+            )
+            self._emit_telemetry_event({
+                "eventType": "feedback.fetched",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": str(agentId),
+                    "feedbackIndex": feedbackIndex,
+                    "found": True,
+                },
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "feedback.fetched",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": str(agentId),
+                    "feedbackIndex": feedbackIndex,
+                    "found": False,
+                },
+            })
+            raise
 
     def searchFeedback(
         self,
@@ -752,8 +831,37 @@ class SDK:
         feedbackIndex: int,
     ) -> "TransactionHandle[Feedback]":
         """Revoke feedback (submitted-by-default)."""
-        return self.feedback_manager.revokeFeedback(agentId, feedbackIndex)
-    
+        start_ms = int(time.time() * 1000)
+        agent_id_str = str(agentId)
+        try:
+            result = self.feedback_manager.revokeFeedback(agentId, feedbackIndex)
+            self._emit_telemetry_event({
+                "eventType": "feedback.revoked",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "feedbackIndex": feedbackIndex,
+                },
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "feedback.revoked",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "feedbackIndex": feedbackIndex,
+                },
+            })
+            raise
+
     def appendResponse(
         self,
         agentId: "AgentId",
@@ -762,9 +870,42 @@ class SDK:
         response: Dict[str, Any],
     ) -> "TransactionHandle[Feedback]":
         """Append a response/follow-up to existing feedback (submitted-by-default)."""
-        return self.feedback_manager.appendResponse(
-            agentId, clientAddress, feedbackIndex, response
-        )
+        start_ms = int(time.time() * 1000)
+        agent_id_str = str(agentId)
+        response_uri = response.get("uri") if response else None
+        try:
+            result = self.feedback_manager.appendResponse(
+                agentId, clientAddress, feedbackIndex, response
+            )
+            self._emit_telemetry_event({
+                "eventType": "feedback.response.appended",
+                "success": True,
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "clientAddress": clientAddress,
+                    "feedbackIndex": feedbackIndex,
+                    "responseUri": response_uri,
+                },
+            })
+            return result
+        except Exception as e:
+            self._emit_telemetry_event({
+                "eventType": "feedback.response.appended",
+                "success": False,
+                "errorType": categorize_error(e),
+                "durationMs": int(time.time() * 1000) - start_ms,
+                "timestamp": int(time.time() * 1000),
+                "payload": {
+                    "chainId": self.chainId,
+                    "agentId": agent_id_str,
+                    "clientAddress": clientAddress,
+                    "feedbackIndex": feedbackIndex,
+                },
+            })
+            raise
     
     def getReputationSummary(
         self,
