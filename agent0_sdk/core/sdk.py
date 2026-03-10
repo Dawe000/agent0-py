@@ -467,9 +467,28 @@ class SDK:
             )
 
         if uri.startswith("ipfs://"):
-            if not self.ipfs_client:
-                raise ValueError("IPFS client not configured")
-            content = self.ipfs_client.get(uri)
+            cid = uri[7:].strip()
+            if self.ipfs_client:
+                content = self.ipfs_client.get(uri)
+            else:
+                # Fallback to public HTTP gateways (same as TS: no IPFS client required for loadAgent)
+                import requests
+                IPFS_GATEWAYS = [
+                    "https://gateway.pinata.cloud/ipfs/",
+                    "https://ipfs.io/ipfs/",
+                    "https://dweb.link/ipfs/",
+                ]
+                content = None
+                for gateway in IPFS_GATEWAYS:
+                    try:
+                        r = requests.get(f"{gateway}{cid}", timeout=10)
+                        if r.ok:
+                            content = r.text
+                            break
+                    except Exception:
+                        continue
+                if content is None:
+                    raise ValueError("Failed to retrieve data from all IPFS gateways")
         elif uri.startswith("http"):
             try:
                 import requests

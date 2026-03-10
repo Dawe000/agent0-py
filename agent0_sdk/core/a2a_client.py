@@ -579,7 +579,6 @@ def send_message(
         if opts.returnImmediately is not None:
             body["configuration"]["returnImmediately"] = opts.returnImmediately
     paths = get_message_send_paths_to_try(a2a_version, tenant)
-    url = append_query_params(base_url.rstrip("/") + paths[0], resolved_auth.get("queryParams", {}))
     body_str = json.dumps(body)
     if x402_deps:
         def parse_res(res: Any) -> Union[MessageResponse, TaskResponse]:
@@ -592,10 +591,20 @@ def send_message(
                 x402_deps,
                 resolved_auth,
             )
-        return request_with_x402(
-            {"url": url, "method": "POST", "headers": a2a_headers(a2a_version, resolved_auth), "body": body_str, "payment": opts.payment, "parseResponse": parse_res},
-            x402_deps,
-        )
+        last_err: Optional[Exception] = None
+        for path in paths:
+            url = append_query_params(base_url.rstrip("/") + path, resolved_auth.get("queryParams", {}))
+            try:
+                return request_with_x402(
+                    {"url": url, "method": "POST", "headers": a2a_headers(a2a_version, resolved_auth), "body": body_str, "payment": opts.payment, "parseResponse": parse_res},
+                    x402_deps,
+                )
+            except RuntimeError as e:
+                last_err = e
+                if "404" in str(e):
+                    continue
+                raise
+        raise (last_err or RuntimeError("A2A request failed"))
     for path in paths:
         u = append_query_params(base_url.rstrip("/") + path, resolved_auth.get("queryParams", {}))
         r = requests.post(u, headers=a2a_headers(a2a_version, resolved_auth), data=body_str)

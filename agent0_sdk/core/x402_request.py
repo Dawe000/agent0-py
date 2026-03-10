@@ -75,7 +75,7 @@ def request_with_x402(
 
     response = do_fetch(payment_payload=payment)
 
-    status = getattr(response, "status_code", response.status) if hasattr(response, "status_code") else getattr(response, "status", 0)
+    status = getattr(response, "status_code", None) or getattr(response, "status", None) or 0
 
     if status == 402:
         resp_headers = getattr(response, "headers", {})
