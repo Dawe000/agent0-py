@@ -16,20 +16,16 @@ Agent0 SDK enables you to:
 - **Cross-chain registration** - One-line registration with IPFS nodes, Pinata, Filecoin, or HTTP URIs
 - **Public indexing** - Subgraph indexing both on-chain and IPFS data for fast search and retrieval
 
-## Release (1.6.0)
+## Release (1.7.0)
 
-This release aligns feedback files with the deployed subgraph schema and removes legacy feedback fields.
+This release adds two major new capabilities to the Python SDK, aligned with the TypeScript SDK: **x402 payment-required HTTP** and **A2A (Agent-to-Agent)** messaging/task support.
 
-It also adds **fully on-chain agent registration files** per [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004), via `data:application/json;base64,...` `agentURI` (ERC-721 `tokenURI`):
+- **x402 request flows**: `sdk.request()` now returns `X402RequiredResponse` on HTTP 402 instead of throwing, so callers can inspect payment requirements and continue with `x402Payment.pay()` or `x402Payment.pay_first()`.
+- **A2A client flows**: `Agent.messageA2A()`, `Agent.listTasks()`, `Agent.loadTask()`, and `sdk.createA2AClient(...)` let you talk to A2A endpoints from either a loaded `Agent` or an `AgentSummary`.
+- **Cross-chain/RPC improvements**: built-in default RPCs plus `overrideRpcUrls` support x402 payments and agent loading across multiple chains from one SDK instance.
+- **Examples, tests, and docs**: the release ships with a full `examples/x402_a2a_demo.py`, expanded unit/live coverage, and updated public docs.
 
-- **Read support**: `SDK.loadAgent()` auto-detects and decodes ERC-8004 JSON base64 `data:` URIs (tolerant of optional params like `;charset=utf-8`).
-- **Write support**: new `Agent.registerOnChain()` publishes the registration file fully on-chain by encoding it into a `data:` URI and writing it via `register(...)` / `setAgentURI(...)`.
-- **Safety**: `SDK.loadAgent()` enforces a max decoded size for `data:` URIs (default **256 KiB**). Override with `registrationDataUriMaxBytes`.
-- **Backwards compatible**: `registerIPFS()` and `register()` (HTTP/IPFS URIs) continue to work unchanged.
-
-For breaking changes and migration notes, see `release_notes/RELEASE_NOTES_1.6.0.md` (and prior notes in `release_notes/`).
-
-**Note on IPFS backends:** the TypeScript SDK added an embedded Helia option in v1.6 (`ipfs: 'helia'`). The Python SDK continues to use `ipfshttpclient` for `ipfs="node"` (connecting to a running Kubo daemon HTTP API).
+For detailed changes, migration notes, and testing guidance, see `release_notes/RELEASE_NOTES_1.7.0.md` (and prior notes in `release_notes/`).
 
 **Bug reports & feedback:** GitHub: [Report issues](https://github.com/agent0lab/agent0-py/issues) | Telegram: [Agent0 channel](https://t.me/agent0kitchen) | Email: team@ag0.xyz
 
@@ -52,7 +48,7 @@ pip install agent0-sdk
 To install a specific version explicitly:
 
 ```bash
-pip install agent0-sdk==1.6.0
+pip install agent0-sdk==1.7.0
 ```
 
 ### Install from Source
