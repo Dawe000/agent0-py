@@ -16,7 +16,7 @@ from agent0_sdk.core.x402_types import (
     parse_402_from_www_authenticate,
     filter_evm_accepts,
     parse_402_settlement_from_header,
-    is_x402_required,
+    isX402Required,
 )
 
 
@@ -103,13 +103,13 @@ class TestParse402SettlementFromHeader:
 
 class TestIsX402Required:
     def test_none_false(self):
-        assert is_x402_required(None) is False
+        assert isX402Required(None) is False
 
     def test_dict_with_flag(self):
-        assert is_x402_required({"x402Required": True}) is True
-        assert is_x402_required({"x402Required": False}) is False
+        assert isX402Required({"x402Required": True}) is True
+        assert isX402Required({"x402Required": False}) is False
 
     def test_object_with_attr(self):
         class R:
             x402Required = True
-        assert is_x402_required(R()) is True
+        assert isX402Required(R()) is True

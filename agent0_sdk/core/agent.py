@@ -192,7 +192,7 @@ class Agent:
     ) -> Union[MessageResponse, TaskResponse, A2APaymentRequired]:
         """Send a message to this agent via A2A. Returns message/task response or 402 payment required."""
         resolved = self._ensure_a2a_resolved()
-        x402_deps = self.sdk.get_x402_request_deps()
+        x402_deps = self.sdk.getX402RequestDeps()
         return send_message(
             resolved["baseUrl"],
             resolved["a2aVersion"],
@@ -210,7 +210,7 @@ class Agent:
     ) -> Union[List[TaskSummary], A2APaymentRequired]:
         """List tasks for this agent's A2A endpoint."""
         resolved = self._ensure_a2a_resolved()
-        x402_deps = self.sdk.get_x402_request_deps()
+        x402_deps = self.sdk.getX402RequestDeps()
         auth_dict: Dict[str, Any] = (
             apply_credential((options.credential or "") if options else "", resolved["auth"])
             if resolved.get("auth")
@@ -232,7 +232,7 @@ class Agent:
     ) -> Union[AgentTask, A2APaymentRequired]:
         """Load a task by ID from this agent's A2A endpoint. On 402, pay/pay_first return AgentTask after payment."""
         resolved = self._ensure_a2a_resolved()
-        x402_deps = self.sdk.get_x402_request_deps()
+        x402_deps = self.sdk.getX402RequestDeps()
         auth_dict: Dict[str, Any] = (
             apply_credential((options.credential or "") if options else "", resolved["auth"])
             if resolved.get("auth")

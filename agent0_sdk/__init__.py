@@ -27,7 +27,7 @@ try:
     from .core.sdk import SDK
     from .core.agent import Agent
     from .core.transaction_handle import TransactionHandle, TransactionMined
-    from .core.x402_types import X402Payment, X402RequiredResponse, is_x402_required
+    from .core.x402_types import X402Payment, X402RequiredResponse, isX402Required
     from .core.a2a import (
         Part,
         MessageResponse,
@@ -50,7 +50,7 @@ except ImportError:
     TransactionMined = None
     X402Payment = None
     X402RequiredResponse = None
-    is_x402_required = None
+    isX402Required = None
     Part = None
     MessageResponse = None
     TaskResponse = None
@@ -90,7 +90,7 @@ __all__ = [
     "SearchFeedbackParams",
     "X402Payment",
     "X402RequiredResponse",
-    "is_x402_required",
+    "isX402Required",
     "Part",
     "MessageResponse",
     "TaskResponse",
