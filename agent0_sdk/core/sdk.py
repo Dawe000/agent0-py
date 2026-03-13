@@ -360,13 +360,13 @@ class SDK:
 
     def request(self, options: Dict[str, Any]) -> Any:
         """HTTP request with x402 handling. On 402 returns X402RequiredResponse with pay/pay_first."""
-        return request_with_x402(options, self.get_x402_request_deps())
+        return request_with_x402(options, self.getX402RequestDeps())
 
-    def fetch_with_x402(self, options: Dict[str, Any]) -> Any:
+    def fetchWithX402(self, options: Dict[str, Any]) -> Any:
         """Alias for request() for x402-specific usage."""
         return self.request(options)
 
-    def get_x402_request_deps(self) -> X402RequestDeps:
+    def getX402RequestDeps(self) -> X402RequestDeps:
         """Return deps for x402-aware requests (fetch, build_payment, check_balance)."""
         return X402RequestDeps(
             fetch=self._x402_fetch,

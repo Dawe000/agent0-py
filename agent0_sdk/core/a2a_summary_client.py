@@ -37,7 +37,7 @@ def _is_x402_response(val: Any) -> bool:
 
 class SDKLike:
     """Minimal SDK surface for A2A (avoids circular dependency)."""
-    def get_x402_request_deps(self) -> Optional[X402RequestDeps]:
+    def getX402RequestDeps(self) -> Optional[X402RequestDeps]:
         raise NotImplementedError
 
 
@@ -67,7 +67,7 @@ class A2AClientFromSummary:
         options: Optional[MessageA2AOptions] = None,
     ) -> Union[MessageResponse, TaskResponse, A2APaymentRequired]:
         resolved = self._ensure_resolved()
-        x402_deps = self._sdk.get_x402_request_deps() if hasattr(self._sdk, "get_x402_request_deps") else None
+        x402_deps = self._sdk.getX402RequestDeps() if hasattr(self._sdk, "getX402RequestDeps") else None
         return send_message(
             resolved["baseUrl"],
             resolved["a2aVersion"],
@@ -84,7 +84,7 @@ class A2AClientFromSummary:
         options: Optional[ListTasksOptions] = None,
     ) -> Union[List[TaskSummary], A2APaymentRequired]:
         resolved = self._ensure_resolved()
-        x402_deps = self._sdk.get_x402_request_deps() if hasattr(self._sdk, "get_x402_request_deps") else None
+        x402_deps = self._sdk.getX402RequestDeps() if hasattr(self._sdk, "getX402RequestDeps") else None
         auth_dict: Optional[Dict[str, Any]] = None
         if resolved.get("auth"):
             auth_dict = apply_credential((options.credential or "") if options else "", resolved["auth"])
@@ -105,7 +105,7 @@ class A2AClientFromSummary:
         options: Optional[LoadTaskOptions] = None,
     ) -> Union[AgentTask, A2APaymentRequired]:
         resolved = self._ensure_resolved()
-        x402_deps = self._sdk.get_x402_request_deps() if hasattr(self._sdk, "get_x402_request_deps") else None
+        x402_deps = self._sdk.getX402RequestDeps() if hasattr(self._sdk, "getX402RequestDeps") else None
         resolved_auth: Optional[Dict[str, Any]] = None
         if resolved.get("auth"):
             resolved_auth = apply_credential((options.credential or "") if options else "", resolved["auth"])

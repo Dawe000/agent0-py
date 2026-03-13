@@ -24,7 +24,7 @@ from .a2a import (
     ListTasksOptions,
     LoadTaskOptions,
 )
-from .x402_types import X402RequiredResponse, is_x402_required
+from .x402_types import X402RequiredResponse, isX402Required
 from .x402_request import request_with_x402, X402RequestDeps
 
 ERR_402 = "A2A server returned 402 Payment Required"

@@ -93,7 +93,7 @@ class RequestSnapshot:
     error: Optional[str] = None
 
 
-def is_x402_required(result: Any) -> bool:
+def isX402Required(result: Any) -> bool:
     """Type guard: result is 402 response. Returns False for None."""
     if result is None:
         return False
